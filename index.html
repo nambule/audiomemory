@@ -332,6 +332,8 @@
     }
 
     function startLevel(lvl){
+      // Hide any end overlay when (re)starting a level
+      if (endEl) { endEl.classList.remove('show','win','lose'); }
       level = lvl;
       const cardCount = nextCardCountForLevel(level);
       const pairCount = cardCount/2;
@@ -350,7 +352,6 @@
     }
 
     if (restartBtn) restartBtn.addEventListener('click', () => startLevel(1));
-    startLevel(1);
 
     function markGone(el){ if(!el) return; el.classList.add('gone'); el.setAttribute('aria-hidden','true'); el.tabIndex = -1; }
 
@@ -377,9 +378,43 @@
       endEl.classList.add('show');
       if (endPrimary) endPrimary.focus();
     }
+
+    // Overlay restart -> hard reset to Level 1
+    if (endPrimary) {
+      endPrimary.addEventListener('click', () => {
+        if (endEl) endEl.classList.remove('show','win','lose');
+        startLevel(1);
+      });
+      endPrimary.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); endPrimary.click(); }
+      });
+    }
+
+    // Kick off
+    startLevel(1);
+
+    // -------- Dev Tests (console) --------
+    ;(function devTests(){
+      try{
+        console.group('%cAudio Memory Game · Pro – Tests','color:#4ea1ff');
+        console.assert(!!document.getElementById('restart'), 'Restart button exists');
+        console.assert(!!document.getElementById('grid'), 'Grid exists');
+        console.assert(!!document.getElementById('matched'), 'Matched counter exists');
+        console.assert(!!document.getElementById('totalPairs'), 'TotalPairs exists');
+        console.assert(!!document.getElementById('flips'), 'Flips counter exists');
+        console.assert(nextCardCountForLevel(1)===4, 'Level 1 => 4 cards');
+        console.assert(nextCardCountForLevel(2)===6, 'Level 2 => 6 cards');
+        console.assert(nextCardCountForLevel(3)===8, 'Level 3 => 8 cards');
+        console.assert(nextCardCountForLevel(30)===64, 'Level cap at 64 cards');
+        const d = buildDeck(8); console.assert(d.length===8, 'Deck of 8 cards');
+        const counts = d.reduce((m,c)=>{m[c.pairId]=(m[c.pairId]||0)+1; return m;},{});
+        console.assert(Object.values(counts).every(v=>v===2), 'Each pair appears exactly twice');
+        console.log('%cAll tests passed','color:#30c48d');
+      }catch(e){ console.error('Dev tests error', e); }
+      finally{ console.groupEnd(); }
+    })();
   }
 })();
 </script>
 </body>
 </html>
-
