@@ -8,6 +8,7 @@
     :root{
       --bg:#0b0d14; --panel:#0f121a; --card:#3a4150; --card-face:#333a4a; --border:#4a5368;
       --text:#e6e9f2; --muted:#9aa3b2; --accent:#4ea1ff; --ok:#30c48d; --bad:#ff5d6a;
+      --banner-bg:#111827; --banner-border:#2a3346; --banner-text:#e5e7eb;
     }
     *{box-sizing:border-box}
     html,body{height:100%}
@@ -67,9 +68,18 @@
     .overlay .actions button{ padding:10px 16px; border-radius:10px; border:1px solid var(--border); background:var(--panel); color:var(--text); font-weight:800; cursor:pointer }
     .overlay.win h1{ color: var(--ok) }
     .overlay.lose h1{ color: var(--bad) }
+
+    .banner{ position:fixed; top:10px; left:50%; transform:translateX(-50%); background:var(--banner-bg); color:var(--banner-text); border:1px solid var(--banner-border); padding:10px 12px; border-radius:10px; font-size:14px; z-index:9999; display:none; box-shadow:0 6px 16px rgba(0,0,0,.35) }
+    .banner.show{ display:flex; gap:10px; align-items:center }
+    .banner button{ background:transparent; border:1px solid var(--banner-border); color:var(--banner-text); padding:4px 8px; border-radius:8px; cursor:pointer; font-weight:800 }
   </style>
 </head>
 <body>
+  <div id="iosBanner" class="banner" role="status" aria-live="polite">
+    <span>🔊 On iPhone/iPad, disable Silent Mode to hear sounds.</span>
+    <button id="bannerClose" aria-label="Dismiss">OK</button>
+  </div>
+
   <header>
     <div class="title">Audio Memory Game · Pro</div>
     <div class="controls">
@@ -108,48 +118,40 @@
   } else { init(); }
 
   function init(){
-    // ---- Audio engine (lazy init for iOS) ----
+    // One-time iOS banner
+    (function setupBanner(){
+      const ua = navigator.userAgent || navigator.vendor || window.opera;
+      const isiOS = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
+      const banner = document.getElementById('iosBanner');
+      const close = document.getElementById('bannerClose');
+      if (isiOS && !localStorage.getItem('audioBannerShown') && banner && close){
+        banner.classList.add('show');
+        close.addEventListener('click', ()=>{ banner.classList.remove('show'); localStorage.setItem('audioBannerShown','1'); }, { once:true });
+      }
+    })();
+
+    // Audio engine (lazy-init + iOS prime)
     const AudioEngine = (() => {
-      let ctx = null;
-      let master = null;
+      let ctx = null, master = null, hasPrimed=false;
       function ensure(){
-        if (!ctx) {
+        if (!ctx){
           const AC = window.AudioContext || window.webkitAudioContext;
-          ctx = new AC();
-          master = ctx.createGain();
-          master.gain.value = 0.22;
-          master.connect(ctx.destination);
+          ctx = new AC(); master = ctx.createGain(); master.gain.value = 0.22; master.connect(ctx.destination);
         }
       }
-      async function unlock(){
-        ensure();
-        try{ if (ctx.state === 'suspended') await ctx.resume(); }catch(e){}
+      function prime(){
+        try{ const now=ctx.currentTime; const o=ctx.createOscillator(); const g=ctx.createGain(); g.gain.value=0; o.type='sine'; o.frequency.value=440; o.connect(g); g.connect(master); o.start(now); o.stop(now+0.02);}catch(e){}
       }
-      function play(freq, duration=0.38){
-        ensure();
-        const now = ctx.currentTime;
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type='triangle';
-        osc.frequency.value=freq;
-        osc.connect(gain); gain.connect(master);
-        const a=0.01,d=0.08,s=0.6,r=0.15;
-        gain.gain.setValueAtTime(0,now);
-        gain.gain.linearRampToValueAtTime(1,now+a);
-        gain.gain.linearRampToValueAtTime(s,now+a+d);
-        gain.gain.setValueAtTime(s, now+duration);
-        gain.gain.linearRampToValueAtTime(0, now+duration+r);
-        osc.start(now); osc.stop(now+duration+r+0.02);
-      }
+      async function unlock(){ ensure(); try{ if (ctx.state==='suspended') await ctx.resume(); }catch(e){} if(!hasPrimed){ prime(); hasPrimed=true; } }
+      function play(freq, dur=0.38){ ensure(); const now=ctx.currentTime; const o=ctx.createOscillator(); const g=ctx.createGain(); o.type='triangle'; o.frequency.value=freq; o.connect(g); g.connect(master); const a=0.01,d=0.08,s=0.6,r=0.15; g.gain.setValueAtTime(0,now); g.gain.linearRampToValueAtTime(1,now+a); g.gain.linearRampToValueAtTime(s,now+a+d); g.gain.setValueAtTime(s, now+dur); g.gain.linearRampToValueAtTime(0, now+dur+r); o.start(now); o.stop(now+dur+r+0.02); }
       return { play, unlock };
     })();
 
-    // Proactively unlock on first interaction (iOS Safari/Firefox)
-    ['touchstart','pointerdown','mousedown','click'].forEach(ev=>{
-      document.addEventListener(ev, ()=>{ AudioEngine.unlock(); }, { once:true, passive:true });
-    });
+    // Pre-unlock on first interaction & when returning to tab
+    ['touchstart','pointerdown','mousedown','click'].forEach(ev=>{ document.addEventListener(ev, ()=>{ AudioEngine.unlock(); }, { once:true, passive:true }); });
+    document.addEventListener('visibilitychange', ()=>{ if (!document.hidden) AudioEngine.unlock(); });
 
-    // ---- DOM refs ----
+    // DOM refs
     const gridEl = document.getElementById('grid');
     const matchedEl = document.getElementById('matched');
     const totalPairsEl = document.getElementById('totalPairs');
@@ -166,145 +168,59 @@
     const timeEl = document.getElementById('time');
     const scoreEl = document.getElementById('score');
 
-    if (!gridEl || !restartBtn || !matchedEl || !totalPairsEl || !flipsEl){
-      console.error('Critical DOM elements missing'); return;
-    }
+    if (!gridEl || !restartBtn || !matchedEl || !totalPairsEl || !flipsEl){ console.error('Critical DOM elements missing'); return; }
 
-    // ---- Game state ----
+    // Game state
     let level = 1, cards = [], first=null, second=null, lockBoard=false, flipsTotal=0, matchedPairs=0;
     let scoreTotal = 0;
 
     // Timers
-    let levelStart = 0;             // for per-round bonus only
-    let gameStart = 0;              // start of whole game (Total time)
-    let finalElapsedMs = 0;         // frozen at end
-    let timerId = null;             // interval id for total timer
+    let levelStart = 0; // per-round bonus only
+    let gameStart = 0;  // total game time
+    let finalElapsedMs = 0; // frozen at end
+    let timerId = null; // interval id for total timer
 
     // Frequencies
     const base = 196; // G3
     const freqs = Array.from({length:40}, (_,i)=> +(base*Math.pow(2, i/12)).toFixed(2));
 
-    // ---- UI helpers ----
+    // UI helpers
     function formatTime(ms){ const s = Math.floor(ms/1000); const m = Math.floor(s/60); const sec = s%60; return `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`; }
     function showToast(msg, t=1200){ toastEl.textContent=msg; toastEl.classList.add('show'); setTimeout(()=>toastEl.classList.remove('show'), t); }
     const tinyDelay = (ms)=> new Promise(res=>setTimeout(res, ms));
 
-    function startTimer(){
-      if (timerId) return; // continuous across rounds
-      if (gameStart === 0) {
-        gameStart = performance.now();
-        if (timeEl) timeEl.textContent = '00:00';
-      }
-      timerId = setInterval(()=>{
-        const elapsed = finalElapsedMs || (performance.now() - gameStart);
-        if (timeEl) timeEl.textContent = formatTime(elapsed);
-      }, 250);
-    }
+    function startTimer(){ if (timerId) return; if (gameStart===0){ gameStart=performance.now(); if (timeEl) timeEl.textContent='00:00'; } timerId=setInterval(()=>{ const elapsed=finalElapsedMs || (performance.now()-gameStart); if (timeEl) timeEl.textContent=formatTime(elapsed); },250); }
     function stopTimer(){ if (timerId){ clearInterval(timerId); timerId=null; } }
 
-    // ---- Scoring ----
-    function pointsForFlips(f){ const map=[0,50,40,30,20,10]; const idx=Math.max(1, Math.min(5, f|0)); return map[idx]; }
-    function addScore(n){ scoreTotal += n; if (scoreEl) scoreEl.textContent = scoreTotal; }
-    function computeTimeBonus(elapsedMs, pairCount){ const elapsedSec = Math.floor(elapsedMs/1000); const base = pairCount*50; const penalty = elapsedSec*4; return Math.max(0, base - penalty); }
+    // Scoring
+    function pointsForFlips(f){ const map=[0,50,40,30,20,10]; const idx=Math.max(1,Math.min(5,f|0)); return map[idx]; }
+    function addScore(n){ scoreTotal+=n; if (scoreEl) scoreEl.textContent=scoreTotal; }
+    function computeTimeBonus(elapsedMs, pairCount){ const elapsedSec=Math.floor(elapsedMs/1000); const base=pairCount*50; const penalty=elapsedSec*4; return Math.max(0, base-penalty); }
 
-    // ---- Layout helpers ----
-    function updateGridTemplate(){ const n = cards.length; const cols = Math.min(8, Math.ceil(Math.sqrt(n))); gridEl.style.gridTemplateColumns = `repeat(${cols}, minmax(84px, 1fr))`; }
+    // Layout
+    function updateGridTemplate(){ const n=cards.length; const cols=Math.min(8, Math.ceil(Math.sqrt(n))); gridEl.style.gridTemplateColumns=`repeat(${cols}, minmax(84px, 1fr))`; }
     function nextCardCountForLevel(lvl){ return Math.min(64, 2*(lvl+1)); }
 
-    function buildDeck(cardCount){
-      const pairCount = cardCount/2; const chosen = freqs.slice(0, pairCount); const deck=[]; let id=0;
-      chosen.forEach((f,idx)=>{ deck.push({id:id++, pairId:idx, freq:f, flipsUsed:0, matched:false}); deck.push({id:id++, pairId:idx, freq:f, flipsUsed:0, matched:false}); });
-      for (let i=deck.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [deck[i],deck[j]]=[deck[j],deck[i]]; }
-      return deck;
-    }
+    function buildDeck(cardCount){ const pairCount=cardCount/2; const chosen=freqs.slice(0,pairCount); const deck=[]; let id=0; chosen.forEach((f,idx)=>{ deck.push({id:id++, pairId:idx, freq:f, flipsUsed:0, matched:false}); deck.push({id:id++, pairId:idx, freq:f, flipsUsed:0, matched:false}); }); for(let i=deck.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [deck[i],deck[j]]=[deck[j],deck[i]]; } return deck; }
 
-    function render(){
-      gridEl.innerHTML=''; updateGridTemplate();
-      cards.forEach(card=>{
-        const cardEl = document.createElement('button'); cardEl.className='card'; cardEl.setAttribute('aria-label','Card'); cardEl.dataset.id=card.id;
-        const flip = document.createElement('div'); flip.className='flip';
-        const back = document.createElement('div'); back.className='back';
-        back.innerHTML=`<div class="glyph" aria-hidden="true"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2l3.2 6.5L22 9.2l-5 4.6L18 21l-6-3.4L6 21l1-7.2-5-4.6 6.8-.7L12 2z"/></svg></div>`;
-        const face = document.createElement('div'); face.className='face';
-        face.innerHTML=`<div class="glyph" aria-hidden="true">
-          <svg viewBox="0 0 64 32" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" role="img">
-            <path d="M0 16 C8 0, 16 32, 24 16 S40 0, 48 16 S56 32, 64 16" stroke-width="2" stroke-linecap="round" />
-          </svg>
-        </div>`;
-        const counter = document.createElement('div'); counter.className='counter'; counter.textContent='0/5'; face.appendChild(counter);
-        flip.appendChild(back); flip.appendChild(face); cardEl.appendChild(flip); gridEl.appendChild(cardEl);
-        card.element = cardEl; card.counterEl = counter; cardEl.addEventListener('click', ()=>onCardClick(card));
-      });
-    }
+    function render(){ gridEl.innerHTML=''; updateGridTemplate(); cards.forEach(card=>{ const cardEl=document.createElement('button'); cardEl.className='card'; cardEl.setAttribute('aria-label','Card'); cardEl.dataset.id=card.id; const flip=document.createElement('div'); flip.className='flip'; const back=document.createElement('div'); back.className='back'; back.innerHTML=`<div class="glyph" aria-hidden="true"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2l3.2 6.5L22 9.2l-5 4.6L18 21l-6-3.4L6 21l1-7.2-5-4.6 6.8-.7L12 2z"/></svg></div>`; const face=document.createElement('div'); face.className='face'; face.innerHTML=`<div class="glyph" aria-hidden="true"><svg viewBox="0 0 64 32" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" role="img"><path d="M0 16 C8 0, 16 32, 24 16 S40 0, 48 16 S56 32, 64 16" stroke-width="2" stroke-linecap="round" /></svg></div>`; const counter=document.createElement('div'); counter.className='counter'; counter.textContent='0/5'; face.appendChild(counter); flip.appendChild(back); flip.appendChild(face); cardEl.appendChild(flip); gridEl.appendChild(cardEl); card.element=cardEl; card.counterEl=counter; cardEl.addEventListener('click', ()=>onCardClick(card)); }); }
 
-    async function onCardClick(card){
-      if (lockBoard || card.matched) return; const el = card.element; if (el.classList.contains('show')) return; if (card.flipsUsed>=5) return;
-      el.classList.add('show'); card.flipsUsed++; card.counterEl.textContent=`${card.flipsUsed}/5`; flipsTotal++; flipsEl.textContent=flipsTotal;
-      await AudioEngine.unlock(); AudioEngine.play(card.freq, 0.36);
-      if (!first){ first=card; return; }
-      second=card; lockBoard=true; await tinyDelay(220);
-      if (first.pairId===second.pairId){
-        first.matched=true; second.matched=true; first.element.classList.add('matched'); second.element.classList.add('matched');
-        markGone(first.element); markGone(second.element);
-        const pairPoints = Math.round((pointsForFlips(first.flipsUsed) + pointsForFlips(second.flipsUsed))/2);
-        addScore(pairPoints);
-        showToast(`+${pairPoints} pts`);
-        matchedPairs++; matchedEl.textContent=matchedPairs; updateProgress(); statusEl.textContent='Matched'; resetTurn();
-        if (matchedPairs===cards.length/2){
-          await tinyDelay(300);
-          const elapsedMs = performance.now()-levelStart; const bonus = computeTimeBonus(elapsedMs, cards.length/2); addScore(bonus);
-          if (cards.length>=64){
-            const totalMs = performance.now() - (gameStart || performance.now());
-            finalElapsedMs = totalMs; stopTimer();
-            showEnd('win', { elapsedMs, totalMs, bonus });
-          } else {
-            showToast(`Round bonus +${bonus}`); startLevel(++level);
-          }
-        }
-      } else {
-        const firstIs5 = first.flipsUsed===5; const secondIs5 = second.flipsUsed===5; if (firstIs5||secondIs5){ gameOver(); return; }
-        statusEl.textContent='Try again'; first.element.classList.add('mismatch'); second.element.classList.add('mismatch');
-        await tinyDelay(200); first.element.classList.remove('show','mismatch'); second.element.classList.remove('show','mismatch'); resetTurn();
-      }
-    }
+    async function onCardClick(card){ if (lockBoard||card.matched) return; const el=card.element; if (el.classList.contains('show')) return; if (card.flipsUsed>=5) return; el.classList.add('show'); card.flipsUsed++; card.counterEl.textContent=`${card.flipsUsed}/5`; flipsTotal++; flipsEl.textContent=flipsTotal; await AudioEngine.unlock(); AudioEngine.play(card.freq, 0.36); if (!first){ first=card; return; } second=card; lockBoard=true; await tinyDelay(220); if (first.pairId===second.pairId){ first.matched=true; second.matched=true; first.element.classList.add('matched'); second.element.classList.add('matched'); markGone(first.element); markGone(second.element); const pairPoints=Math.round((pointsForFlips(first.flipsUsed)+pointsForFlips(second.flipsUsed))/2); addScore(pairPoints); showToast(`+${pairPoints} pts`); matchedPairs++; matchedEl.textContent=matchedPairs; updateProgress(); statusEl.textContent='Matched'; resetTurn(); if (matchedPairs===cards.length/2){ await tinyDelay(300); const elapsedMs=performance.now()-levelStart; const bonus=computeTimeBonus(elapsedMs, cards.length/2); addScore(bonus); if (cards.length>=64){ const totalMs=performance.now()-(gameStart||performance.now()); finalElapsedMs=totalMs; stopTimer(); showEnd('win', { elapsedMs, totalMs, bonus }); } else { showToast(`Round bonus +${bonus}`); startLevel(++level); } } } else { const firstIs5=first.flipsUsed===5; const secondIs5=second.flipsUsed===5; if (firstIs5||secondIs5){ gameOver(); return; } statusEl.textContent='Try again'; first.element.classList.add('mismatch'); second.element.classList.add('mismatch'); await tinyDelay(200); first.element.classList.remove('show','mismatch'); second.element.classList.remove('show','mismatch'); resetTurn(); } }
 
     function resetTurn(){ first=null; second=null; lockBoard=false; }
 
-    function gameOver(){ lockBoard=true; statusEl.textContent='Game over'; showToast('Mismatch on a 5/5 flip.'); cards.forEach(c=>c.element.classList.add('disabled'));
-      const totalMs = performance.now() - (gameStart || performance.now()); finalElapsedMs = totalMs; stopTimer();
-      showEnd('lose', { elapsedMs: 0, totalMs, bonus: 0 }); }
+    function gameOver(){ lockBoard=true; statusEl.textContent='Game over'; showToast('Mismatch on a 5/5 flip.'); cards.forEach(c=>c.element.classList.add('disabled')); const totalMs=performance.now()-(gameStart||performance.now()); finalElapsedMs=totalMs; stopTimer(); showEnd('lose', { elapsedMs: 0, totalMs, bonus: 0 }); }
 
-    function startLevel(lvl){
-      if (endEl) { endEl.classList.remove('show','win','lose'); }
-      level=lvl; const cardCount = nextCardCountForLevel(level); const pairCount = cardCount/2;
-      matchedPairs=0; flipsTotal=0; first=null; second=null; lockBoard=false;
-      cards = buildDeck(cardCount);
-      if (level===1) { scoreTotal = 0; if (scoreEl) scoreEl.textContent = '0'; finalElapsedMs = 0; gameStart = 0; stopTimer(); if (timeEl) timeEl.textContent = '00:00'; }
-      matchedEl.textContent=matchedPairs; totalPairsEl.textContent=pairCount; flipsEl.textContent=flipsTotal; levelBadge.textContent=`Level ${level}`; statusEl.textContent='';
-      updateGridTemplate(); render(); updateProgress(); levelStart = performance.now(); startTimer();
-    }
+    function startLevel(lvl){ if (endEl) endEl.classList.remove('show','win','lose'); level=lvl; const cardCount=nextCardCountForLevel(level); const pairCount=cardCount/2; matchedPairs=0; flipsTotal=0; first=null; second=null; lockBoard=false; cards=buildDeck(cardCount); if (level===1){ scoreTotal=0; if (scoreEl) scoreEl.textContent='0'; finalElapsedMs=0; gameStart=0; stopTimer(); if (timeEl) timeEl.textContent='00:00'; } matchedEl.textContent=matchedPairs; totalPairsEl.textContent=pairCount; flipsEl.textContent=flipsTotal; levelBadge.textContent=`Level ${level}`; statusEl.textContent=''; updateGridTemplate(); render(); updateProgress(); levelStart=performance.now(); startTimer(); }
 
     if (restartBtn) restartBtn.addEventListener('click', ()=> startLevel(1));
 
     function markGone(el){ if(!el) return; el.classList.add('gone'); el.setAttribute('aria-hidden','true'); el.tabIndex=-1; }
-    function updateProgress(){ const total = cards.length/2 || 1; const pct = Math.round((matchedPairs/total)*100); const fill = document.getElementById('progressFill'); if (fill) fill.style.width = pct + '%'; }
+    function updateProgress(){ const total=cards.length/2||1; const pct=Math.round((matchedPairs/total)*100); const fill=document.getElementById('progressFill'); if (fill) fill.style.width=pct+'%'; }
 
-    function showEnd(type, meta={}){
-      const { elapsedMs=0, totalMs=finalElapsedMs, bonus=0 } = meta;
-      if (!endEl) return; endEl.classList.remove('win','lose');
-      if (type==='win'){
-        endEl.classList.add('win'); endTitle.textContent='🎉 Congratulations!'; endSubtitle.textContent='You have completed all levels!';
-        const totalTxt = formatTime(totalMs);
-        if (endStatsEl) endStatsEl.textContent = `Total time: ${totalTxt} · Round bonus: +${bonus} · Total score: ${scoreTotal}`;
-      } else {
-        endEl.classList.add('lose'); endTitle.textContent='💥 Game Over!'; endSubtitle.textContent='A card was flipped 5 times without finding its pair...';
-        const totalTxt = formatTime(totalMs);
-        if (endStatsEl) endStatsEl.textContent = `Total time: ${totalTxt} · Total score: ${scoreTotal}`;
-      }
-      endEl.classList.add('show'); if (endPrimary) endPrimary.focus();
-    }
+    function showEnd(type, meta={}){ const { elapsedMs=0, totalMs=finalElapsedMs, bonus=0 } = meta; if (!endEl) return; endEl.classList.remove('win','lose'); if (type==='win'){ endEl.classList.add('win'); endTitle.textContent='🎉 Congratulations!'; endSubtitle.textContent='You have completed all levels!'; const totalTxt=formatTime(totalMs); if (endStatsEl) endStatsEl.textContent=`Total time: ${totalTxt} · Round bonus: +${bonus} · Total score: ${scoreTotal}`; } else { endEl.classList.add('lose'); endTitle.textContent='💥 Game Over!'; endSubtitle.textContent='A card was flipped 5 times without finding its pair...'; const totalTxt=formatTime(totalMs); if (endStatsEl) endStatsEl.textContent=`Total time: ${totalTxt} · Total score: ${scoreTotal}`; } endEl.classList.add('show'); if (endPrimary) endPrimary.focus(); }
 
-    if (endPrimary){ endPrimary.addEventListener('click', ()=>{ if (endEl) endEl.classList.remove('show','win','lose'); startLevel(1); }); endPrimary.addEventListener('keydown', (e)=>{ if (e.key==='Enter' || e.key===' ') { e.preventDefault(); endPrimary.click(); } }); }
+    if (endPrimary){ endPrimary.addEventListener('click', ()=>{ if (endEl) endEl.classList.remove('show','win','lose'); startLevel(1); }); endPrimary.addEventListener('keydown', e=>{ if (e.key==='Enter'||e.key===' '){ e.preventDefault(); endPrimary.click(); } }); }
 
     // Kick off
     startLevel(1);
