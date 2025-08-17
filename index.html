@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Audio Memory Game · Pro</title>
+  <style>
+    :root{
+      --bg:#0b0d14; --panel:#0f121a; --card:#3a4150; --card-face:#333a4a; --border:#4a5368;
+      --text:#e6e9f2; --muted:#9aa3b2; --accent:#4ea1ff; --ok:#30c48d; --bad:#ff5d6a;
+      --banner-bg:#111827; --banner-border:#2a3346; --banner-text:#e5e7eb;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0; font-family:Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto;
+      color:var(--text); display:flex; flex-direction:column; align-items:center; gap:12px; padding:16px;
+      background:linear-gradient(180deg, #0a0c13, #0b0d14 40%, #0a0c13 100%);
+    }
+    header{width:100%; max-width:1080px; display:grid; grid-template-columns:1fr auto; grid-template-areas:"title controls" "stats stats"; align-items:center; column-gap:12px; row-gap:8px}
+    .title{grid-area:title; font-weight:900; letter-spacing:.2px; font-size:clamp(18px, 2.2vw, 26px)}
+    .controls{grid-area:controls; display:flex; align-items:center; gap:8px; flex-wrap:wrap}
+    .stats{grid-area:stats; display:flex; gap:12px; align-items:center; flex-wrap:wrap; color:var(--muted); font-weight:600}
+    .badge{background:#0f131f; border:1px solid var(--border); padding:6px 10px; border-radius:999px; font-weight:800; color:#cfd5e2}
+
+    button{background:var(--panel); color:var(--text); border:1px solid var(--border); padding:9px 14px; border-radius:10px; cursor:pointer; font-weight:700; transition: background .18s ease, transform .05s ease, border-color .18s ease}
+    button:hover{ background:#121623; border-color:#2e3546 }
+    button:active{ transform:translateY(1px) }
+
+    .progress{ width:100%; max-width:1080px; height:6px; background:#0e121b; border-radius:999px; border:1px solid var(--border); overflow:hidden }
+    .progress>div{ height:100%; width:0%; background: linear-gradient(90deg, #2b7cff, #4ea1ff); transition: width .3s ease }
+
+    #grid{ width:100%; max-width:1080px; flex:1; display:grid; gap:10px; align-content:start; min-height:220px }
+
+    .card{ position:relative; width:100%; border-radius:12px; overflow:hidden; cursor:pointer; background:linear-gradient(180deg, var(--card), #4a5264); border:1px solid var(--border); transition: transform .12s ease, filter .2s ease, border-color .2s ease, opacity .22s ease; user-select:none; perspective:900px; transform-style:preserve-3d; filter:brightness(1.2)}
+    .card::before{ content:""; display:block; padding-top:100% }
+    .card.disabled{opacity:.45; cursor:not-allowed}
+    .card.matched{ border-color:#275a45; box-shadow:0 0 0 2px #275a4599 inset }
+    .card.gone{ visibility:hidden; opacity:0; transform:none; pointer-events:none }
+
+    .flip{ position:absolute; inset:0; transform-style:preserve-3d; transition: transform .32s ease }
+    .card.show .flip{ transform: rotateY(180deg) }
+
+    .face,.back{ position:absolute; inset:0; display:grid; place-items:center; backface-visibility:hidden }
+    .back{ background: radial-gradient(160px 160px at 50% 40%, #505a72, #3a4154 70%) }
+    .face{ transform: rotateY(180deg); background: linear-gradient(180deg, var(--card-face), #3a4154) }
+
+    .glyph{ width:46%; max-width:72px; opacity:.95 }
+    .glyph svg{ width:100%; height:auto; display:block }
+    .back .glyph svg{ fill:#f0f2f7 }
+    .face .glyph svg path{ stroke:#ffffff; fill:none }
+
+    .counter{ position:absolute; top:8px; right:10px; font-size:12px; font-weight:800; background:#0c111ecc; padding:4px 8px; border-radius:999px; border:1px solid #283048; color:#cbd3e4; display:none }
+    .card.show .counter{ display:inline-block }
+
+    .toast{ position:fixed; bottom:16px; left:50%; transform:translateX(-50%); background:#0e1322; border:1px solid var(--border); color:var(--text); padding:10px 14px; border-radius:10px; opacity:0; transition:opacity .2s ease, transform .2s ease; pointer-events:none }
+    .toast.show{ opacity:1; transform:translateX(-50%) translateY(-4px) }
+
+    .status{ font-weight:800 }
+    .card.mismatch{ box-shadow:0 0 0 2px #ff5d6a99 inset }
+
+    .overlay{ position:fixed; inset:0; background:rgba(9,11,20,.72); backdrop-filter:blur(6px); display:none; align-items:center; justify-content:center; z-index:50 }
+    .overlay.show{ display:flex }
+    .overlay .panel{ width:min(560px, 92vw); background:#0f121a; border:1px solid var(--border); border-radius:16px; padding:24px; text-align:center; box-shadow:0 20px 60px rgba(0,0,0,.55) }
+    .overlay h1{ margin:0 0 8px; font-size:28px; font-weight:900 }
+    .overlay p{ margin:0 0 20px; color:var(--muted); font-weight:600 }
+    .overlay .actions{ display:flex; gap:10px; justify-content:center; flex-wrap:wrap }
+    .overlay .actions button{ padding:10px 16px; border-radius:10px; border:1px solid var(--border); background:var(--panel); color:var(--text); font-weight:800; cursor:pointer }
+    .overlay.win h1{ color: var(--ok) }
+    .overlay.lose h1{ color: var(--bad) }
+
+    .banner{ position:fixed; top:10px; left:50%; transform:translateX(-50%); background:var(--banner-bg); color:var(--banner-text); border:1px solid var(--banner-border); padding:10px 12px; border-radius:10px; font-size:14px; z-index:9999; display:none; box-shadow:0 6px 16px rgba(0,0,0,.35) }
+    .banner.show{ display:flex; gap:10px; align-items:center }
+    .banner button{ background:transparent; border:1px solid var(--banner-border); color:var(--banner-text); padding:4px 8px; border-radius:8px; cursor:pointer; font-weight:800 }
+  </style>
+</head>
+<body>
+  <div id="iosBanner" class="banner" role="status" aria-live="polite">
+    <span>🔊 On iPhone/iPad, disable Silent Mode to hear sounds.</span>
+    <button id="bannerClose" aria-label="Dismiss">OK</button>
+  </div>
+
+  <header>
+    <div class="title">Audio Memory Game · Pro</div>
+    <div class="controls">
+      <button id="restart">Restart</button>
+      <button id="helpBtn">Help</button>
+      <span class="badge" id="levelBadge">Level 1</span>
+    </div>
+    <div class="stats">
+      <span>Pairs matched: <strong id="matched">0</strong>/<span id="totalPairs">0</span></span>
+      <span>Flips: <strong id="flips">0</strong></span>
+      <span>Total time: <strong id="time">00:00</strong></span>
+      <span>Score: <strong id="score">0</strong></span>
+      <span class="status" id="status"></span>
+    </div>
+  </header>
+
+  <div class="progress" aria-hidden="true"><div id="progressFill"></div></div>
+  <main id="grid" aria-label="Cards grid"></main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <div id="endScreen" class="overlay" aria-modal="true" role="dialog" aria-labelledby="endTitle" aria-describedby="endSubtitle">
+    <div class="panel">
+      <h1 id="endTitle">—</h1>
+      <p id="endSubtitle">—</p>
+      <div class="actions">
+        <p id="endStats" style="margin:0 0 8px; color:#cfd5e2; font-weight:700"></p>
+        <button id="endPrimary">Restart</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="helpModal" class="overlay" aria-modal="true" role="dialog" aria-labelledby="helpTitle">
+    <div class="panel" style="max-width: 640px;">
+      <h1 id="helpTitle">🎵 How to Play</h1>
+      <div style="text-align: left; color: #e6e9f2; line-height: 1.6; font-weight: 600;">
+        
+        <h2 style="color: #4ea1ff; font-size: 20px; margin: 16px 0 8px 0;">🎯 Objective</h2>
+        <p style="margin: 0 0 16px 0;">Match pairs of cards by listening to their unique audio frequencies. Complete all 31 levels to win!</p>
+        
+        <h2 style="color: #4ea1ff; font-size: 20px; margin: 16px 0 8px 0;">🎮 Game Rules</h2>
+        <ul style="margin: 0 0 16px 0; padding-left: 20px;">
+          <li style="margin-bottom: 6px;"><strong>Click cards</strong> to flip them and hear their sound</li>
+          <li style="margin-bottom: 6px;"><strong>Match pairs</strong> with identical frequencies</li>
+          <li style="margin-bottom: 6px;"><strong>5-flip limit:</strong> Each card can only be flipped 5 times</li>
+          <li style="margin-bottom: 6px;"><strong>Game over</strong> if any card reaches 5 flips without matching</li>
+          <li style="margin-bottom: 6px;"><strong>Progress:</strong> Each level adds more card pairs</li>
+        </ul>
+        
+        <h2 style="color: #4ea1ff; font-size: 20px; margin: 16px 0 8px 0;">🏆 Scoring</h2>
+        <ul style="margin: 0 0 16px 0; padding-left: 20px;">
+          <li style="margin-bottom: 6px;"><strong>Efficiency bonus:</strong> 50 pts (1 flip) → 10 pts (5 flips)</li>
+          <li style="margin-bottom: 6px;"><strong>Speed bonus:</strong> Faster level completion = more points</li>
+          <li style="margin-bottom: 6px;"><strong>Leaderboard:</strong> Compete against other players</li>
+        </ul>
+        
+        <div style="background: #ff5d6a22; border: 1px solid #ff5d6a; border-radius: 8px; padding: 12px; margin: 16px 0;">
+          <h2 style="color: #ff5d6a; font-size: 18px; margin: 0 0 8px 0;">🔊 Sound Required!</h2>
+          <p style="margin: 0; color: #e6e9f2;"><strong>This game relies entirely on audio.</strong> Make sure your volume is up and sound is enabled.</p>
+          <p style="margin: 8px 0 0 0; color: #ffb84d; font-weight: 700;">📱 <strong>iPhone/iPad users:</strong> Check that Silent Mode is OFF (toggle the physical switch on the side of your device).</p>
+        </div>
+        
+        <h2 style="color: #4ea1ff; font-size: 20px; margin: 16px 0 8px 0;">💡 Tips</h2>
+        <ul style="margin: 0 0 16px 0; padding-left: 20px;">
+          <li style="margin-bottom: 6px;">Listen carefully - each frequency has a unique pitch</li>
+          <li style="margin-bottom: 6px;">Use headphones for better audio precision</li>
+          <li style="margin-bottom: 6px;">Remember card positions to avoid wasted flips</li>
+          <li style="margin-bottom: 6px;">Start with corner/edge cards for easier tracking</li>
+        </ul>
+        
+      </div>
+      <div class="actions">
+        <button id="helpClose">Got it!</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else { init(); }
+
+  function init(){
+    // One-time iOS banner
+    (function setupBanner(){
+      const ua = navigator.userAgent || navigator.vendor || window.opera;
+      const isiOS = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
+      const banner = document.getElementById('iosBanner');
+      const close = document.getElementById('bannerClose');
+      if (isiOS && !localStorage.getItem('audioBannerShown') && banner && close){
+        banner.classList.add('show');
+        close.addEventListener('click', ()=>{ banner.classList.remove('show'); localStorage.setItem('audioBannerShown','1'); }, { once:true });
+      }
+    })();
+
+    // Audio engine (lazy-init + iOS prime)
+    const AudioEngine = (() => {
+      let ctx = null, master = null, hasPrimed=false;
+      function ensure(){
+        if (!ctx){
+          const AC = window.AudioContext || window.webkitAudioContext;
+          ctx = new AC(); master = ctx.createGain(); master.gain.value = 0.22; master.connect(ctx.destination);
+        }
+      }
+      function prime(){
+        try{ const now=ctx.currentTime; const o=ctx.createOscillator(); const g=ctx.createGain(); g.gain.value=0; o.type='sine'; o.frequency.value=440; o.connect(g); g.connect(master); o.start(now); o.stop(now+0.02);}catch(e){}
+      }
+      async function unlock(){ ensure(); try{ if (ctx.state==='suspended') await ctx.resume(); }catch(e){} if(!hasPrimed){ prime(); hasPrimed=true; } }
+      function play(freq, dur=0.38){ ensure(); const now=ctx.currentTime; const o=ctx.createOscillator(); const g=ctx.createGain(); o.type='triangle'; o.frequency.value=freq; o.connect(g); g.connect(master); const a=0.01,d=0.08,s=0.6,r=0.15; g.gain.setValueAtTime(0,now); g.gain.linearRampToValueAtTime(1,now+a); g.gain.linearRampToValueAtTime(s,now+a+d); g.gain.setValueAtTime(s, now+dur); g.gain.linearRampToValueAtTime(0, now+dur+r); o.start(now); o.stop(now+dur+r+0.02); }
+      return { play, unlock };
+    })();
+
+    // Pre-unlock on first interaction & when returning to tab
+    ['touchstart','pointerdown','mousedown','click'].forEach(ev=>{ document.addEventListener(ev, ()=>{ AudioEngine.unlock(); }, { once:true, passive:true }); });
+    document.addEventListener('visibilitychange', ()=>{ if (!document.hidden) AudioEngine.unlock(); });
+
+    // DOM refs
+    const gridEl = document.getElementById('grid');
+    const matchedEl = document.getElementById('matched');
+    const totalPairsEl = document.getElementById('totalPairs');
+    const flipsEl = document.getElementById('flips');
+    const restartBtn = document.getElementById('restart');
+    const helpBtn = document.getElementById('helpBtn');
+    const levelBadge = document.getElementById('levelBadge');
+    const statusEl = document.getElementById('status');
+    const toastEl = document.getElementById('toast');
+    const endEl = document.getElementById('endScreen');
+    const endTitle = document.getElementById('endTitle');
+    const endSubtitle = document.getElementById('endSubtitle');
+    const endPrimary = document.getElementById('endPrimary');
+    const endStatsEl = document.getElementById('endStats');
+    const timeEl = document.getElementById('time');
+    const scoreEl = document.getElementById('score');
+    const helpModal = document.getElementById('helpModal');
+    const helpClose = document.getElementById('helpClose');
+
+    if (!gridEl || !restartBtn || !matchedEl || !totalPairsEl || !flipsEl){ console.error('Critical DOM elements missing'); return; }
+
+    // Game state
+    let level = 1, cards = [], first=null, second=null, lockBoard=false, flipsTotal=0, matchedPairs=0;
+    let scoreTotal = 0;
+    let gameId = null, playerId = null;
+
+    // Timers
+    let levelStart = 0; // per-round bonus only
+    let gameStart = 0;  // total game time
+    let finalElapsedMs = 0; // frozen at end
+    let timerId = null; // interval id for total timer
+
+    // Frequencies
+    const base = 196; // G3
+    const freqs = Array.from({length:40}, (_,i)=> +(base*Math.pow(2, i/12)).toFixed(2));
+
+    // UI helpers
+    function formatTime(ms){ const s = Math.floor(ms/1000); const m = Math.floor(s/60); const sec = s%60; return `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`; }
+    function showToast(msg, t=1200){ toastEl.textContent=msg; toastEl.classList.add('show'); setTimeout(()=>toastEl.classList.remove('show'), t); }
+    const tinyDelay = (ms)=> new Promise(res=>setTimeout(res, ms));
+
+    // Analytics
+    async function logEvent(type, data = {}) {
+      if (!gameId) return;
+      try {
+        await fetch(`/api/game/${gameId}/event`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type,
+            data: {
+              ...data,
+              level,
+              score: scoreTotal,
+              flips: flipsTotal,
+              matchedPairs
+            }
+          })
+        });
+      } catch (error) {
+        console.warn('Failed to log event:', error);
+      }
+    }
+
+    async function endCurrentGame() {
+      if (!gameId) return;
+      const totalMs = performance.now() - (gameStart || performance.now());
+      await logEvent('game_end', { won: false, abandoned: true, totalTime: totalMs });
+    }
+
+    async function startNewGame() {
+      await endCurrentGame();
+      try {
+        const response = await fetch('/api/game/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ playerId })
+        });
+        const data = await response.json();
+        gameId = data.gameId;
+        playerId = data.playerId;
+        localStorage.setItem('audiogame_player_id', playerId);
+      } catch (error) {
+        console.warn('Failed to start game session:', error);
+      }
+    }
+
+    function startTimer(){ if (timerId) return; if (gameStart===0){ gameStart=performance.now(); if (timeEl) timeEl.textContent='00:00'; } timerId=setInterval(()=>{ const elapsed=finalElapsedMs || (performance.now()-gameStart); if (timeEl) timeEl.textContent=formatTime(elapsed); },250); }
+    function stopTimer(){ if (timerId){ clearInterval(timerId); timerId=null; } }
+
+    // Scoring
+    function pointsForFlips(f){ const map=[0,50,40,30,20,10]; const idx=Math.max(1,Math.min(5,f|0)); return map[idx]; }
+    function addScore(n){ scoreTotal+=n; if (scoreEl) scoreEl.textContent=scoreTotal; }
+    function computeTimeBonus(elapsedMs, pairCount){ const elapsedSec=Math.floor(elapsedMs/1000); const base=pairCount*50; const penalty=elapsedSec*4; return Math.max(0, base-penalty); }
+
+    // Layout
+    function updateGridTemplate(){ const n=cards.length; const cols=Math.min(8, Math.ceil(Math.sqrt(n))); gridEl.style.gridTemplateColumns=`repeat(${cols}, minmax(84px, 1fr))`; }
+    function nextCardCountForLevel(lvl){ return Math.min(64, 2*(lvl+1)); }
+
+    function buildDeck(cardCount){ const pairCount=cardCount/2; const chosen=freqs.slice(0,pairCount); const deck=[]; let id=0; chosen.forEach((f,idx)=>{ deck.push({id:id++, pairId:idx, freq:f, flipsUsed:0, matched:false}); deck.push({id:id++, pairId:idx, freq:f, flipsUsed:0, matched:false}); }); for(let i=deck.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [deck[i],deck[j]]=[deck[j],deck[i]]; } return deck; }
+
+    function render(){ gridEl.innerHTML=''; updateGridTemplate(); cards.forEach(card=>{ const cardEl=document.createElement('button'); cardEl.className='card'; cardEl.setAttribute('aria-label','Card'); cardEl.dataset.id=card.id; const flip=document.createElement('div'); flip.className='flip'; const back=document.createElement('div'); back.className='back'; back.innerHTML=`<div class="glyph" aria-hidden="true"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2l3.2 6.5L22 9.2l-5 4.6L18 21l-6-3.4L6 21l1-7.2-5-4.6 6.8-.7L12 2z"/></svg></div>`; const face=document.createElement('div'); face.className='face'; face.innerHTML=`<div class="glyph" aria-hidden="true"><svg viewBox="0 0 64 32" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" role="img"><path d="M0 16 C8 0, 16 32, 24 16 S40 0, 48 16 S56 32, 64 16" stroke-width="2" stroke-linecap="round" /></svg></div>`; const counter=document.createElement('div'); counter.className='counter'; counter.textContent='0/5'; face.appendChild(counter); flip.appendChild(back); flip.appendChild(face); cardEl.appendChild(flip); gridEl.appendChild(cardEl); card.element=cardEl; card.counterEl=counter; cardEl.addEventListener('click', ()=>onCardClick(card)); }); }
+
+    async function onCardClick(card){ if (lockBoard||card.matched) return; const el=card.element; if (el.classList.contains('show')) return; if (card.flipsUsed>=5) return; el.classList.add('show'); card.flipsUsed++; card.counterEl.textContent=`${card.flipsUsed}/5`; flipsTotal++; flipsEl.textContent=flipsTotal; await AudioEngine.unlock(); AudioEngine.play(card.freq, 0.36); logEvent('card_flip', { cardId: card.id, frequency: card.freq, timesFlipped: card.flipsUsed }); if (!first){ first=card; return; } second=card; lockBoard=true; await tinyDelay(220); if (first.pairId===second.pairId){ first.matched=true; second.matched=true; first.element.classList.add('matched'); second.element.classList.add('matched'); markGone(first.element); markGone(second.element); const pairPoints=Math.round((pointsForFlips(first.flipsUsed)+pointsForFlips(second.flipsUsed))/2); addScore(pairPoints); showToast(`+${pairPoints} pts`); matchedPairs++; matchedEl.textContent=matchedPairs; updateProgress(); statusEl.textContent='Matched'; logEvent('match', { pairId: first.pairId, points: pairPoints }); resetTurn(); if (matchedPairs===cards.length/2){ await tinyDelay(300); const elapsedMs=performance.now()-levelStart; const bonus=computeTimeBonus(elapsedMs, cards.length/2); addScore(bonus); logEvent('level_complete', { completedLevel: level, timeBonus: bonus, elapsedMs }); if (cards.length>=64){ const totalMs=performance.now()-(gameStart||performance.now()); finalElapsedMs=totalMs; stopTimer(); logEvent('game_end', { won: true, totalTime: totalMs }); showEnd('win', { elapsedMs, totalMs, bonus }); } else { showToast(`Round bonus +${bonus}`); startLevel(++level); } } } else { const firstIs5=first.flipsUsed===5; const secondIs5=second.flipsUsed===5; logEvent('mismatch', { card1: first.id, card2: second.id }); if (firstIs5||secondIs5){ gameOver(); return; } statusEl.textContent='Try again'; first.element.classList.add('mismatch'); second.element.classList.add('mismatch'); await tinyDelay(200); first.element.classList.remove('show','mismatch'); second.element.classList.remove('show','mismatch'); resetTurn(); } }
+
+    function resetTurn(){ first=null; second=null; lockBoard=false; }
+
+    function gameOver(){ lockBoard=true; statusEl.textContent='Game over'; showToast('Mismatch on a 5/5 flip.'); cards.forEach(c=>c.element.classList.add('disabled')); const totalMs=performance.now()-(gameStart||performance.now()); finalElapsedMs=totalMs; stopTimer(); logEvent('game_end', { won: false, totalTime: totalMs }); showEnd('lose', { elapsedMs: 0, totalMs, bonus: 0 }); }
+
+    async function startLevel(lvl){ if (endEl) endEl.classList.remove('show','win','lose'); level=lvl; const cardCount=nextCardCountForLevel(level); const pairCount=cardCount/2; matchedPairs=0; flipsTotal=0; first=null; second=null; lockBoard=false; cards=buildDeck(cardCount); if (level===1){ scoreTotal=0; if (scoreEl) scoreEl.textContent='0'; finalElapsedMs=0; gameStart=0; stopTimer(); if (timeEl) timeEl.textContent='00:00'; await startNewGame(); } matchedEl.textContent=matchedPairs; totalPairsEl.textContent=pairCount; flipsEl.textContent=flipsTotal; levelBadge.textContent=`Level ${level}`; statusEl.textContent=''; updateGridTemplate(); render(); updateProgress(); levelStart=performance.now(); startTimer(); logEvent('level_start', { startingLevel: level, cardCount }); }
+
+    if (restartBtn) restartBtn.addEventListener('click', ()=> startLevel(1));
+
+    // Help modal
+    if (helpBtn && helpModal && helpClose) {
+      helpBtn.addEventListener('click', () => {
+        helpModal.classList.add('show');
+        helpClose.focus();
+      });
+      
+      helpClose.addEventListener('click', () => {
+        helpModal.classList.remove('show');
+      });
+      
+      // Close help modal with Escape key
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && helpModal.classList.contains('show')) {
+          helpModal.classList.remove('show');
+        }
+      });
+      
+      // Close help modal when clicking outside
+      helpModal.addEventListener('click', (e) => {
+        if (e.target === helpModal) {
+          helpModal.classList.remove('show');
+        }
+      });
+    }
+
+    function markGone(el){ if(!el) return; el.classList.add('gone'); el.setAttribute('aria-hidden','true'); el.tabIndex=-1; }
+    function updateProgress(){ const total=cards.length/2||1; const pct=Math.round((matchedPairs/total)*100); const fill=document.getElementById('progressFill'); if (fill) fill.style.width=pct+'%'; }
+
+    async function showEnd(type, meta={}){ const { elapsedMs=0, totalMs=finalElapsedMs, bonus=0 } = meta; if (!endEl) return; endEl.classList.remove('win','lose'); if (type==='win'){ endEl.classList.add('win'); endTitle.textContent='🎉 Congratulations!'; endSubtitle.textContent='You have completed all levels!'; const totalTxt=formatTime(totalMs); if (endStatsEl) endStatsEl.textContent=`Total time: ${totalTxt} · Round bonus: +${bonus} · Total score: ${scoreTotal}`; } else { endEl.classList.add('lose'); endTitle.textContent='💥 Game Over!'; endSubtitle.textContent='A card was flipped 5 times without finding its pair...'; const totalTxt=formatTime(totalMs); if (endStatsEl) endStatsEl.textContent=`Total time: ${totalTxt} · Total score: ${scoreTotal}`; } await showRanking(); endEl.classList.add('show'); if (endPrimary) endPrimary.focus(); }
+
+    async function showRanking() {
+      if (!gameId) return;
+      try {
+        const [rankResponse, leaderboardResponse] = await Promise.all([
+          fetch(`/api/game/${gameId}/rank`),
+          fetch('/api/leaderboard')
+        ]);
+        const rankData = await rankResponse.json();
+        const leaderboard = await leaderboardResponse.json();
+        
+        const rankingHtml = `
+          <div style="margin: 16px 0; padding: 12px; background: #0a0d15; border: 1px solid #2a3346; border-radius: 8px;">
+            <div style="color: #4ea1ff; font-weight: 800; margin-bottom: 8px;">🏆 Your Ranking</div>
+            <div style="margin-bottom: 12px; color: #e6e9f2; font-weight: 700;">
+              Rank #${rankData.rank} of ${rankData.totalGames} players (Top ${100 - rankData.percentile}%)
+            </div>
+            <div style="color: #9aa3b2; font-size: 13px; font-weight: 600; margin-bottom: 10px;">Leaderboard</div>
+            ${leaderboard.slice(0, 5).map(player => `
+              <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 0; color: ${player.playerId === playerId ? '#4ea1ff' : '#cfd5e2'}; font-weight: ${player.playerId === playerId ? '800' : '600'}; font-size: 13px;">
+                <div style="display: flex; flex-direction: column; gap: 1px;">
+                  <span>#${player.rank} ${player.playerId === playerId ? '(YOU)' : ''}</span>
+                  <span style="font-size: 11px; color: #9aa3b2; font-weight: 500;">${player.date} ${player.time}</span>
+                </div>
+                <div style="text-align: right;">
+                  <div>${player.score} pts</div>
+                  <div style="font-size: 11px; color: #9aa3b2; font-weight: 500;">L${player.level}</div>
+                </div>
+              </div>
+            `).join('')}
+            ${leaderboard.length > 5 ? '<div style="color: #666; text-align: center; margin-top: 6px; font-size: 12px;">...</div>' : ''}
+          </div>
+        `;
+        
+        if (endStatsEl) {
+          endStatsEl.innerHTML += rankingHtml;
+        }
+      } catch (error) {
+        console.warn('Failed to load ranking:', error);
+      }
+    }
+
+    if (endPrimary){ endPrimary.addEventListener('click', ()=>{ if (endEl) endEl.classList.remove('show','win','lose'); startLevel(1); }); endPrimary.addEventListener('keydown', e=>{ if (e.key==='Enter'||e.key===' '){ e.preventDefault(); endPrimary.click(); } }); }
+
+    // Initialize player ID
+    playerId = localStorage.getItem('audiogame_player_id') || null;
+
+    // Kick off
+    startLevel(1);
+  }
+})();
+</script>
+</body>
+</html>
