@@ -165,6 +165,18 @@
     </div>
   </div>
 
+  <div id="nameModal" class="overlay" aria-modal="true" role="dialog" aria-labelledby="nameTitle">
+    <div class="panel" style="max-width: 400px;">
+      <h1 id="nameTitle">🏆 Enter Your Name</h1>
+      <p style="color: #9aa3b2; margin-bottom: 20px;">Enter your name to appear on the leaderboard:</p>
+      <input type="text" id="nameInput" placeholder="Your name..." maxlength="20" style="width: 100%; padding: 12px; border: 1px solid #4a5368; border-radius: 6px; background: #333a4a; color: #e6e9f2; font-size: 16px; margin-bottom: 20px;" />
+      <div class="actions">
+        <button id="nameSkip" style="background: #333a4a; color: #9aa3b2;">Skip</button>
+        <button id="nameSubmit">Save Name</button>
+      </div>
+    </div>
+  </div>
+
 <script>
 (function(){
   if (document.readyState === 'loading') {
@@ -392,7 +404,7 @@
         const leaderboardHtml = leaderboard.map(player => `
           <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; margin: 4px 0; color: ${player.gameId === gameId ? '#4ea1ff' : '#cfd5e2'}; font-weight: ${player.gameId === gameId ? '800' : '600'}; font-size: 14px; ${player.gameId === gameId ? 'background: rgba(78, 161, 255, 0.1); border: 1px solid rgba(78, 161, 255, 0.3); border-radius: 6px;' : 'border: 1px solid transparent;'}">
             <div style="display: flex; flex-direction: column; gap: 2px;">
-              <span>#${player.rank} ${player.gameId === gameId ? '(YOU)' : player.playerId}</span>
+              <span>#${player.rank} ${player.gameId === gameId ? `${player.playerId} (YOU)` : player.playerId}</span>
               <span style="font-size: 12px; color: #9aa3b2; font-weight: 500;">${player.date} ${player.time}</span>
             </div>
             <div style="text-align: right;">
@@ -413,8 +425,56 @@
 
     async function promptPlayerName() {
       return new Promise((resolve) => {
-        const name = prompt('Enter your name for the leaderboard (or leave empty for anonymous):');
-        resolve(name && name.trim() ? name.trim() : null);
+        const nameModal = document.getElementById('nameModal');
+        const nameInput = document.getElementById('nameInput');
+        const nameSubmit = document.getElementById('nameSubmit');
+        const nameSkip = document.getElementById('nameSkip');
+        
+        if (!nameModal || !nameInput || !nameSubmit || !nameSkip) {
+          resolve(null);
+          return;
+        }
+        
+        nameInput.value = '';
+        nameModal.classList.add('show');
+        nameInput.focus();
+        
+        const handleSubmit = () => {
+          const name = nameInput.value.trim();
+          nameModal.classList.remove('show');
+          cleanup();
+          resolve(name || null);
+        };
+        
+        const handleSkip = () => {
+          nameModal.classList.remove('show');
+          cleanup();
+          resolve(null);
+        };
+        
+        const handleEscape = (e) => {
+          if (e.key === 'Escape') {
+            handleSkip();
+          }
+        };
+        
+        const handleEnter = (e) => {
+          if (e.key === 'Enter') {
+            handleSubmit();
+          }
+        };
+        
+        const cleanup = () => {
+          nameSubmit.removeEventListener('click', handleSubmit);
+          nameSkip.removeEventListener('click', handleSkip);
+          document.removeEventListener('keydown', handleEscape);
+          nameInput.removeEventListener('keydown', handleEnter);
+        };
+        
+        nameSubmit.addEventListener('click', handleSubmit);
+        nameSkip.addEventListener('click', handleSkip);
+        document.addEventListener('keydown', handleEscape);
+        nameInput.addEventListener('keydown', handleEnter);
       });
     }
 
@@ -467,7 +527,7 @@
             ${leaderboard.map(player => `
               <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 0; color: ${player.gameId === gameId ? '#4ea1ff' : '#cfd5e2'}; font-weight: ${player.gameId === gameId ? '800' : '600'}; font-size: 13px; ${player.gameId === gameId ? 'background: rgba(78, 161, 255, 0.1); border-radius: 4px; padding: 6px 4px;' : ''}">
                 <div style="display: flex; flex-direction: column; gap: 1px;">
-                  <span>#${player.rank} ${player.gameId === gameId ? '(YOU)' : ''}</span>
+                  <span>#${player.rank} ${player.gameId === gameId ? `${player.playerId} (YOU)` : player.playerId}</span>
                   <span style="font-size: 11px; color: #9aa3b2; font-weight: 500;">${player.date} ${player.time}</span>
                 </div>
                 <div style="text-align: right;">
