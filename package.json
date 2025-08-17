@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
-    "build": "echo 'Build complete'",
+    "build": "node server.js",
     "test": "echo 'No tests specified'"
   },
   "dependencies": {
