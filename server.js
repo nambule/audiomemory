@@ -173,8 +173,10 @@ app.get('/api/leaderboard', async (req, res) => {
     if (currentGameId) {
       const currentGame = allGames.find(g => g.gameId === currentGameId);
       if (currentGame && !leaderboard.find(g => g.gameId === currentGameId)) {
-        leaderboard = [...leaderboard.slice(0, 4), currentGame];
+        // Add current game and keep top 5 by rank
+        leaderboard.push(currentGame);
         leaderboard.sort((a, b) => a.rank - b.rank);
+        leaderboard = leaderboard.slice(0, 5);
       }
     }
     
