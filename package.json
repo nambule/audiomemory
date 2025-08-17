@@ -3,11 +3,9 @@
   "version": "1.0.0",
   "description": "Audio Memory Game with persistence and ranking",
   "type": "module",
-  "main": "server.js",
+  "main": "index.html",
   "scripts": {
-    "start": "node server.js",
-    "dev": "nodemon server.js",
-    "build": "node server.js",
+    "build": "echo 'Static build complete'",
     "test": "echo 'No tests specified'"
   },
   "dependencies": {
