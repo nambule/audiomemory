@@ -168,36 +168,23 @@ app.get('/api/leaderboard', async (req, res) => {
       fullDate: game.start_time
     }));
     
-    let leaderboard;
+    let leaderboard = allGames.slice(0, 5);
     
     if (currentGameId) {
-      const currentGame = allGames.find(g => g.gameId === currentGameId);
-      if (currentGame) {
-        const currentRank = currentGame.rank;
-        let startRank, endRank;
+      const currentGameIndex = allGames.findIndex(g => g.gameId === currentGameId);
+      if (currentGameIndex !== -1) {
+        const currentRank = currentGameIndex + 1;
         
         if (currentRank <= 5) {
-          // Show ranks 1-5 if current player is in top 5
-          startRank = 1;
-          endRank = 5;
+          // Show top 5 if current player is in top 5
+          leaderboard = allGames.slice(0, 5);
         } else {
-          // Center the window around current rank
-          startRank = Math.max(1, currentRank - 2);
-          endRank = startRank + 4;
-          
-          // Adjust if we go beyond total games
-          if (endRank > allGames.length) {
-            endRank = allGames.length;
-            startRank = Math.max(1, endRank - 4);
-          }
+          // Show window centered around current player
+          const windowStart = Math.max(0, currentGameIndex - 2);
+          const windowEnd = Math.min(allGames.length, windowStart + 5);
+          leaderboard = allGames.slice(windowStart, windowEnd);
         }
-        
-        leaderboard = allGames.filter(game => game.rank >= startRank && game.rank <= endRank);
-      } else {
-        leaderboard = allGames.slice(0, 5);
       }
-    } else {
-      leaderboard = allGames.slice(0, 5);
     }
     
     res.json(leaderboard);
