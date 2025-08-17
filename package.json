@@ -2,6 +2,7 @@
   "name": "audio-memory-game",
   "version": "1.0.0",
   "description": "Audio Memory Game with persistence and ranking",
+  "type": "module",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -14,5 +15,8 @@
     "dotenv": "^17.2.1",
     "express": "^4.18.2",
     "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
   }
 }

@@ -85,6 +85,7 @@
     <div class="controls">
       <button id="restart">Restart</button>
       <button id="helpBtn">Help</button>
+      <button id="leaderboardBtn">Leaderboard</button>
       <span class="badge" id="levelBadge">Level 1</span>
     </div>
     <div class="stats">
@@ -117,42 +118,39 @@
       <h1 id="helpTitle">🎵 How to Play</h1>
       <div style="text-align: left; color: #e6e9f2; line-height: 1.6; font-weight: 600;">
         
-        <h2 style="color: #4ea1ff; font-size: 20px; margin: 16px 0 8px 0;">🎯 Objective</h2>
-        <p style="margin: 0 0 16px 0;">Match pairs of cards by listening to their unique audio frequencies. Complete all 31 levels to win!</p>
+        <p style="margin: 0 0 12px 0;"><strong>🎯 Match pairs of cards by listening to unique audio frequencies.</strong> Complete all 31 levels!</p>
         
-        <h2 style="color: #4ea1ff; font-size: 20px; margin: 16px 0 8px 0;">🎮 Game Rules</h2>
-        <ul style="margin: 0 0 16px 0; padding-left: 20px;">
-          <li style="margin-bottom: 6px;"><strong>Click cards</strong> to flip them and hear their sound</li>
-          <li style="margin-bottom: 6px;"><strong>Match pairs</strong> with identical frequencies</li>
-          <li style="margin-bottom: 6px;"><strong>5-flip limit:</strong> Each card can only be flipped 5 times</li>
-          <li style="margin-bottom: 6px;"><strong>Game over</strong> if any card reaches 5 flips without matching</li>
-          <li style="margin-bottom: 6px;"><strong>Progress:</strong> Each level adds more card pairs</li>
-        </ul>
-        
-        <h2 style="color: #4ea1ff; font-size: 20px; margin: 16px 0 8px 0;">🏆 Scoring</h2>
-        <ul style="margin: 0 0 16px 0; padding-left: 20px;">
-          <li style="margin-bottom: 6px;"><strong>Efficiency bonus:</strong> 50 pts (1 flip) → 10 pts (5 flips)</li>
-          <li style="margin-bottom: 6px;"><strong>Speed bonus:</strong> Faster level completion = more points</li>
-          <li style="margin-bottom: 6px;"><strong>Leaderboard:</strong> Compete against other players</li>
-        </ul>
-        
-        <div style="background: #ff5d6a22; border: 1px solid #ff5d6a; border-radius: 8px; padding: 12px; margin: 16px 0;">
-          <h2 style="color: #ff5d6a; font-size: 18px; margin: 0 0 8px 0;">🔊 Sound Required!</h2>
-          <p style="margin: 0; color: #e6e9f2;"><strong>This game relies entirely on audio.</strong> Make sure your volume is up and sound is enabled.</p>
-          <p style="margin: 8px 0 0 0; color: #ffb84d; font-weight: 700;">📱 <strong>iPhone/iPad users:</strong> Check that Silent Mode is OFF (toggle the physical switch on the side of your device).</p>
+        <div style="background: #ff5d6a22; border: 1px solid #ff5d6a; border-radius: 6px; padding: 10px; margin: 12px 0;">
+          <p style="margin: 0; color: #e6e9f2; font-size: 14px;"><strong>🔊 Sound Required!</strong> Volume up, Silent Mode OFF (iPhone/iPad).</p>
         </div>
         
-        <h2 style="color: #4ea1ff; font-size: 20px; margin: 16px 0 8px 0;">💡 Tips</h2>
-        <ul style="margin: 0 0 16px 0; padding-left: 20px;">
-          <li style="margin-bottom: 6px;">Listen carefully - each frequency has a unique pitch</li>
-          <li style="margin-bottom: 6px;">Use headphones for better audio precision</li>
-          <li style="margin-bottom: 6px;">Remember card positions to avoid wasted flips</li>
-          <li style="margin-bottom: 6px;">Start with corner/edge cards for easier tracking</li>
+        <h3 style="color: #4ea1ff; font-size: 16px; margin: 12px 0 6px 0;">Rules & Scoring</h3>
+        <ul style="margin: 0 0 12px 0; padding-left: 16px; font-size: 14px;">
+          <li>Click cards to hear sounds, match identical frequencies</li>
+          <li>5-flip limit per card - game over if exceeded</li>
+          <li>Efficiency: 50 pts (1 flip) → 10 pts (5 flips)</li>
+          <li>Speed bonus for faster completion</li>
         </ul>
+        
+        <div style="text-align: center; margin-top: 16px; padding-top: 12px; border-top: 1px solid #333; color: #888; font-size: 12px;">
+          Audio Memory Game v1.0.0
+        </div>
         
       </div>
       <div class="actions">
         <button id="helpClose">Got it!</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="leaderboardModal" class="overlay" aria-modal="true" role="dialog" aria-labelledby="leaderboardTitle">
+    <div class="panel" style="max-width: 500px;">
+      <h1 id="leaderboardTitle">🏆 Leaderboard</h1>
+      <div id="leaderboardContent" style="text-align: left; color: #e6e9f2; line-height: 1.6;">
+        <div style="text-align: center; color: #9aa3b2; padding: 20px;">Loading...</div>
+      </div>
+      <div class="actions">
+        <button id="leaderboardClose">Close</button>
       </div>
     </div>
   </div>
@@ -204,6 +202,7 @@
     const flipsEl = document.getElementById('flips');
     const restartBtn = document.getElementById('restart');
     const helpBtn = document.getElementById('helpBtn');
+    const leaderboardBtn = document.getElementById('leaderboardBtn');
     const levelBadge = document.getElementById('levelBadge');
     const statusEl = document.getElementById('status');
     const toastEl = document.getElementById('toast');
@@ -216,6 +215,9 @@
     const scoreEl = document.getElementById('score');
     const helpModal = document.getElementById('helpModal');
     const helpClose = document.getElementById('helpClose');
+    const leaderboardModal = document.getElementById('leaderboardModal');
+    const leaderboardClose = document.getElementById('leaderboardClose');
+    const leaderboardContent = document.getElementById('leaderboardContent');
 
     if (!gridEl || !restartBtn || !matchedEl || !totalPairsEl || !flipsEl){ console.error('Critical DOM elements missing'); return; }
 
@@ -337,6 +339,65 @@
       });
     }
 
+    // Leaderboard modal
+    if (leaderboardBtn && leaderboardModal && leaderboardClose) {
+      leaderboardBtn.addEventListener('click', async () => {
+        leaderboardModal.classList.add('show');
+        leaderboardClose.focus();
+        await loadLeaderboard();
+      });
+      
+      leaderboardClose.addEventListener('click', () => {
+        leaderboardModal.classList.remove('show');
+      });
+      
+      // Close leaderboard modal with Escape key
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && leaderboardModal.classList.contains('show')) {
+          leaderboardModal.classList.remove('show');
+        }
+      });
+      
+      // Close leaderboard modal when clicking outside
+      leaderboardModal.addEventListener('click', (e) => {
+        if (e.target === leaderboardModal) {
+          leaderboardModal.classList.remove('show');
+        }
+      });
+    }
+
+    async function loadLeaderboard() {
+      if (!leaderboardContent) return;
+      try {
+        leaderboardContent.innerHTML = '<div style="text-align: center; color: #9aa3b2; padding: 20px;">Loading...</div>';
+        
+        const response = await fetch(`/api/leaderboard${gameId ? `?currentGameId=${gameId}` : ''}`);
+        const leaderboard = await response.json();
+        
+        if (leaderboard.length === 0) {
+          leaderboardContent.innerHTML = '<div style="text-align: center; color: #9aa3b2; padding: 20px;">No games completed yet.</div>';
+          return;
+        }
+        
+        const leaderboardHtml = leaderboard.map(player => `
+          <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; margin: 4px 0; color: ${player.gameId === gameId ? '#4ea1ff' : '#cfd5e2'}; font-weight: ${player.gameId === gameId ? '800' : '600'}; font-size: 14px; ${player.gameId === gameId ? 'background: rgba(78, 161, 255, 0.1); border: 1px solid rgba(78, 161, 255, 0.3); border-radius: 6px;' : 'border: 1px solid transparent;'}">
+            <div style="display: flex; flex-direction: column; gap: 2px;">
+              <span>#${player.rank} ${player.gameId === gameId ? '(YOU)' : player.playerId}</span>
+              <span style="font-size: 12px; color: #9aa3b2; font-weight: 500;">${player.date} ${player.time}</span>
+            </div>
+            <div style="text-align: right;">
+              <div style="font-weight: 700;">${player.score} pts</div>
+              <div style="font-size: 12px; color: #9aa3b2; font-weight: 500;">Level ${player.level}</div>
+            </div>
+          </div>
+        `).join('');
+        
+        leaderboardContent.innerHTML = leaderboardHtml;
+      } catch (error) {
+        leaderboardContent.innerHTML = '<div style="text-align: center; color: #ff5d6a; padding: 20px;">Error loading leaderboard</div>';
+      }
+    }
+
     function markGone(el){ if(!el) return; el.classList.add('gone'); el.setAttribute('aria-hidden','true'); el.tabIndex=-1; }
     function updateProgress(){ const total=cards.length/2||1; const pct=Math.round((matchedPairs/total)*100); const fill=document.getElementById('progressFill'); if (fill) fill.style.width=pct+'%'; }
 
@@ -345,9 +406,12 @@
     async function showRanking() {
       if (!gameId) return;
       try {
+        // Small delay to ensure database update completes
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
         const [rankResponse, leaderboardResponse] = await Promise.all([
           fetch(`/api/game/${gameId}/rank`),
-          fetch('/api/leaderboard')
+          fetch(`/api/leaderboard?currentGameId=${gameId}`)
         ]);
         const rankData = await rankResponse.json();
         const leaderboard = await leaderboardResponse.json();
@@ -359,10 +423,10 @@
               Rank #${rankData.rank} of ${rankData.totalGames} players (Top ${100 - rankData.percentile}%)
             </div>
             <div style="color: #9aa3b2; font-size: 13px; font-weight: 600; margin-bottom: 10px;">Leaderboard</div>
-            ${leaderboard.slice(0, 5).map(player => `
-              <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 0; color: ${player.playerId === playerId ? '#4ea1ff' : '#cfd5e2'}; font-weight: ${player.playerId === playerId ? '800' : '600'}; font-size: 13px;">
+            ${leaderboard.map(player => `
+              <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 0; color: ${player.gameId === gameId ? '#4ea1ff' : '#cfd5e2'}; font-weight: ${player.gameId === gameId ? '800' : '600'}; font-size: 13px; ${player.gameId === gameId ? 'background: rgba(78, 161, 255, 0.1); border-radius: 4px; padding: 6px 4px;' : ''}">
                 <div style="display: flex; flex-direction: column; gap: 1px;">
-                  <span>#${player.rank} ${player.playerId === playerId ? '(YOU)' : ''}</span>
+                  <span>#${player.rank} ${player.gameId === gameId ? '(YOU)' : ''}</span>
                   <span style="font-size: 11px; color: #9aa3b2; font-weight: 500;">${player.date} ${player.time}</span>
                 </div>
                 <div style="text-align: right;">

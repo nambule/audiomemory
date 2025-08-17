@@ -1,8 +1,8 @@
 import 'dotenv/config';
 
-const express = require('express');
-const { v4: uuidv4 } = require('uuid');
-const { supabase } = require('./supabase-config');
+import express from 'express';
+import { v4 as uuidv4 } from 'uuid';
+import { supabase } from './supabase-config.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -45,7 +45,8 @@ async function saveGame(game) {
       events: game.events
     };
     
-    const { error } = await supabase
+    console.log('Attempting to save game:', gameData.game_id);
+    const { data, error } = await supabase
       .from('games')
       .upsert(gameData, { onConflict: 'game_id' });
     
@@ -53,6 +54,8 @@ async function saveGame(game) {
       console.error('Error saving game:', error);
       throw error;
     }
+    
+    console.log('Game saved successfully:', gameData.game_id);
   } catch (error) {
     console.error('Error saving game:', error);
     throw error;
@@ -127,6 +130,7 @@ app.post('/api/game/:gameId/event', async (req, res) => {
   try {
     const { gameId } = req.params;
     const { type, data } = req.body;
+    console.log('Event received:', { gameId, type, data });
     
     const game = await findGame(gameId);
     
@@ -146,7 +150,10 @@ app.post('/api/game/:gameId/event', async (req, res) => {
     // Update game state based on event
     if (data.flips !== undefined) game.totalFlips = data.flips;
     if (data.level !== undefined) game.finalLevel = data.level;
-    if (data.score !== undefined) game.finalScore = data.score;
+    if (data.score !== undefined && !data.abandoned) {
+      console.log('Updating score from', game.finalScore, 'to', data.score);
+      game.finalScore = data.score;
+    }
     if (type === 'game_end') {
       if (data.won) {
         game.status = 'won';
@@ -167,31 +174,53 @@ app.post('/api/game/:gameId/event', async (req, res) => {
 // Get leaderboard
 app.get('/api/leaderboard', async (req, res) => {
   try {
+    const { currentGameId } = req.query;
     const { data: games, error } = await supabase
       .from('games')
       .select('*')
       .in('status', ['won', 'lost', 'abandoned'])
       .order('final_score', { ascending: false })
-      .order('start_time', { ascending: true })
-      .limit(10);
+      .order('start_time', { ascending: true });
     
     if (error) {
       console.error('Error loading leaderboard:', error);
       return res.status(500).json({ error: error.message });
     }
     
-    const leaderboard = (games || []).map((game, index) => ({
+    const allGames = (games || []).map((game, index) => ({
       rank: index + 1,
       playerId: game.player_id,
+      gameId: game.game_id,
       score: game.final_score,
       level: game.final_level,
       flips: game.total_flips,
       duration: Math.round((new Date(game.last_action_time) - new Date(game.start_time)) / 1000),
-      date: new Date(game.start_time).toLocaleDateString(),
-      time: new Date(game.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      date: new Date(game.start_time).toLocaleDateString('en-US', { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
+      time: new Date(game.start_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
       fullDate: game.start_time
     }));
     
+    // Get top 5 and ensure current game is included
+    let leaderboard = allGames.slice(0, 5);
+    
+    if (currentGameId) {
+      const currentGame = allGames.find(g => g.gameId === currentGameId);
+      console.log('Looking for current game:', currentGameId, 'Found:', !!currentGame);
+      if (currentGame) {
+        console.log('Current game score:', currentGame.score, 'rank:', currentGame.rank);
+        if (!leaderboard.find(g => g.gameId === currentGameId)) {
+          // Current game not in top 5, add it to the list
+          leaderboard = [...leaderboard.slice(0, 4), currentGame];
+          // Sort by rank to maintain order
+          leaderboard.sort((a, b) => a.rank - b.rank);
+          console.log('Added current game to leaderboard');
+        } else {
+          console.log('Current game already in top 5');
+        }
+      }
+    }
+    
+    console.log('Returning leaderboard with', leaderboard.length, 'games');
     res.json(leaderboard);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -226,7 +255,9 @@ app.get('/api/game/:gameId/rank', async (req, res) => {
     res.json({ 
       rank: rank || totalGames + 1, 
       totalGames,
-      percentile: totalGames > 0 ? Math.round(((totalGames - rank + 1) / totalGames) * 100) : 0
+      percentile: totalGames > 0 ? Math.round(((totalGames - rank + 1) / totalGames) * 100) : 0,
+      playerId: currentGame.playerId,
+      gameId: currentGame.gameId
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -264,4 +295,6 @@ setInterval(cleanupOldGames, 60 * 60 * 1000);
 
 app.listen(PORT, () => {
   console.log(`Audio Memory Game server running on port ${PORT}`);
+  console.log('Supabase URL:', process.env.SUPABASE_URL);
+  console.log('Supabase Key configured:', !!process.env.SUPABASE_ANON_KEY);
 });
