@@ -411,7 +411,38 @@
     function markGone(el){ if(!el) return; el.classList.add('gone'); el.setAttribute('aria-hidden','true'); el.tabIndex=-1; }
     function updateProgress(){ const total=cards.length/2||1; const pct=Math.round((matchedPairs/total)*100); const fill=document.getElementById('progressFill'); if (fill) fill.style.width=pct+'%'; }
 
-    async function showEnd(type, meta={}){ const { elapsedMs=0, totalMs=finalElapsedMs, bonus=0 } = meta; if (!endEl) return; endEl.classList.remove('win','lose'); if (type==='win'){ endEl.classList.add('win'); endTitle.textContent='🎉 Congratulations!'; endSubtitle.textContent='You have completed all levels!'; const totalTxt=formatTime(totalMs); if (endStatsEl) endStatsEl.textContent=`Total time: ${totalTxt} · Round bonus: +${bonus} · Total score: ${scoreTotal}`; } else { endEl.classList.add('lose'); endTitle.textContent='💥 Game Over!'; endSubtitle.textContent='A card was flipped 5 times without finding its pair...'; const totalTxt=formatTime(totalMs); if (endStatsEl) endStatsEl.textContent=`Total time: ${totalTxt} · Total score: ${scoreTotal}`; } await showRanking(); endEl.classList.add('show'); if (endPrimary) endPrimary.focus(); }
+    async function promptPlayerName() {
+      return new Promise((resolve) => {
+        const name = prompt('Enter your name for the leaderboard (or leave empty for anonymous):');
+        resolve(name && name.trim() ? name.trim() : null);
+      });
+    }
+
+    async function updatePlayerName(newName) {
+      if (!newName || !gameId) return;
+      try {
+        const response = await fetch(`/api/game/${gameId}/update-player`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ playerName: newName })
+        });
+        if (response.ok) {
+          playerId = newName;
+          localStorage.setItem('audiogame_player_id', newName);
+        }
+      } catch (error) {
+        console.error('Failed to update player name:', error);
+      }
+    }
+
+    async function showEnd(type, meta={}){ const { elapsedMs=0, totalMs=finalElapsedMs, bonus=0 } = meta; if (!endEl) return; endEl.classList.remove('win','lose'); if (type==='win'){ endEl.classList.add('win'); endTitle.textContent='🎉 Congratulations!'; endSubtitle.textContent='You have completed all levels!'; const totalTxt=formatTime(totalMs); if (endStatsEl) endStatsEl.textContent=`Total time: ${totalTxt} · Round bonus: +${bonus} · Total score: ${scoreTotal}`; } else { endEl.classList.add('lose'); endTitle.textContent='💥 Game Over!'; endSubtitle.textContent='A card was flipped 5 times without finding its pair...'; const totalTxt=formatTime(totalMs); if (endStatsEl) endStatsEl.textContent=`Total time: ${totalTxt} · Total score: ${scoreTotal}`; } 
+      
+      const playerName = await promptPlayerName();
+      if (playerName) {
+        await updatePlayerName(playerName);
+      }
+      
+      await showRanking(); endEl.classList.add('show'); if (endPrimary) endPrimary.focus(); }
 
     async function showRanking() {
       if (!gameId) return;

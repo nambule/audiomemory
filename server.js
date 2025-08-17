@@ -184,6 +184,29 @@ app.get('/api/leaderboard', async (req, res) => {
   }
 });
 
+// Update player name
+app.post('/api/game/:gameId/update-player', async (req, res) => {
+  try {
+    const { gameId } = req.params;
+    const { playerName } = req.body;
+    
+    if (!playerName || playerName.trim().length === 0) {
+      return res.status(400).json({ error: 'Player name is required' });
+    }
+    
+    const { error } = await supabase
+      .from('games')
+      .update({ player_id: playerName.trim() })
+      .eq('game_id', gameId);
+    
+    if (error) throw error;
+    
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get player rank
 app.get('/api/game/:gameId/rank', async (req, res) => {
   try {
